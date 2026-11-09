@@ -305,13 +305,22 @@ const RadarOverlay: React.FC = () => {
                   <span className="text-sm">✓</span>
                   <span>In Inbox</span>
                 </div>
+                <button
+                  onClick={handleImport}
+                  disabled={status === "pushing"}
+                  className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium transition-colors border border-slate-700 hover:border-slate-600"
+                  title="Erneut nach FlipOS übertragen (z. B. nach Löschung oder Aktualisierung)"
+                >
+                  <span>🔄</span>
+                  <span>Erneut importieren</span>
+                </button>
                 <a
                   href="https://kukan.vercel.app/inbox"
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-colors"
                 >
-                  <span>In FlipOS öffnen</span>
+                  <span>FlipOS</span>
                   <span>↗</span>
                 </a>
               </div>

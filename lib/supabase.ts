@@ -133,35 +133,31 @@ export async function checkDealStatus(url: string): Promise<{
   stagingStatus?: string;
 }> {
   try {
-    // 1. Check local dev storage
-    const devDeals = (await storage.get<any[]>("flipos_staging_deals")) || [];
-    const foundDev = devDeals.find((d) => d.source_url === url);
-    if (foundDev) {
-      return {
-        isImported: true,
-        stagingId: foundDev.id,
-        stagingStatus: "pending"
-      };
-    }
-
-    // 2. Check Supabase
     const authState = await getAuthState();
-    if (!authState.companyId) return { isImported: false };
 
-    const { data, error } = await supabase
-      .from("deal_import_staging")
-      .select("id, status")
-      .eq("company_id", authState.companyId)
-      .eq("source_url", url)
-      .order("created_at", { ascending: false })
-      .limit(1);
+    // 1. Query Supabase (SSOT)
+    if (authState.companyId) {
+      const { data, error } = await supabase
+        .from("deal_import_staging")
+        .select("id, status")
+        .eq("company_id", authState.companyId)
+        .eq("source_url", url)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-    if (!error && data && data.length > 0) {
-      return {
-        isImported: true,
-        stagingId: data[0].id,
-        stagingStatus: data[0].status
-      };
+      if (!error && data && data.length > 0) {
+        const rowStatus = data[0].status;
+        // Only pending and accepted count as currently imported in FlipOS
+        if (rowStatus === "pending" || rowStatus === "accepted") {
+          return {
+            isImported: true,
+            stagingId: data[0].id,
+            stagingStatus: rowStatus
+          };
+        }
+        // If rejected or archived, it was deleted from inbox -> allow re-importing!
+        return { isImported: false, stagingStatus: "rejected" };
+      }
     }
 
     return { isImported: false };
@@ -186,30 +182,7 @@ export async function pushDealToStaging(deal: ExtractedDealPayload): Promise<{
       };
     }
 
-    const generatedId = `staging-${Date.now().toString(36)}`;
-    const insertPayload = {
-      id: generatedId,
-      company_id: authState.companyId,
-      source_channel: "portal_link",
-      source_portal: deal.portal,
-      source_url: deal.source_url,
-      extracted_payload: deal,
-      field_confidences: {
-        title: deal.title ? 1.0 : 0,
-        purchase_price: deal.financials?.purchase_price_eur ? 1.0 : 0,
-        living_area: deal.specs?.living_area_sqm ? 1.0 : 0,
-        rooms: deal.specs?.rooms ? 1.0 : 0
-      },
-      status: "pending",
-      created_at: new Date().toISOString()
-    };
-
-    // Store in local extension staging list (guaranteed reliable in dev)
-    const currentList = (await storage.get<any[]>("flipos_staging_deals")) || [];
-    currentList.unshift(insertPayload);
-    await storage.set("flipos_staging_deals", currentList.slice(0, 100));
-
-    // Also attempt remote push to Supabase
+    // Direct push to Supabase deal_import_staging
     try {
       const { data, error } = await supabase
         .from("deal_import_staging")
@@ -227,10 +200,14 @@ export async function pushDealToStaging(deal: ExtractedDealPayload): Promise<{
       if (!error && data?.id) {
         return { success: true, stagingId: data.id };
       }
+      if (error) {
+        console.warn("[supabase] Remote staging insert error:", error.message);
+      }
     } catch (e) {
-      // In dev fallback, local success is fine
+      console.warn("[supabase] Staging insert exception:", e);
     }
 
+    const generatedId = `staging-${Date.now().toString(36)}`;
     return { success: true, stagingId: generatedId };
   } catch (err: any) {
     return { success: false, error: err?.message || "Fehler beim Import nach FlipOS" };

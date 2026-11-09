@@ -33,6 +33,8 @@ export interface ExtractedDealPayload {
     heating_type?: string;
     energy_class?: string;
     energy_val_kwh?: number;
+    energy_certificate_type?: string;
+    primary_energy_source?: string;
     rented?: boolean;
     current_net_rent_eur?: number;
   };

@@ -418,6 +418,18 @@ export function parseImmoScout(): ExtractedDealPayload | null {
         break;
       }
     }
+    // Global fallback across full text if not found next to keyword
+    if (!heatingType) {
+      if (/Fußbodenheizung/i.test(bodyText)) heatingType = "Fußbodenheizung";
+      else if (/Etagenheizung|Gasetagenheizung/i.test(bodyText)) heatingType = "Etagenheizung";
+      else if (/Zentralheizung|Öl-Zentralheizung|Gas-Zentralheizung/i.test(bodyText)) heatingType = "Zentralheizung";
+      else if (/Fernwärme/i.test(bodyText)) heatingType = "Fernwärme";
+      else if (/Wärmepumpe/i.test(bodyText)) heatingType = "Wärmepumpe";
+      else if (/Ofenheizung/i.test(bodyText)) heatingType = "Ofenheizung";
+      else if (primaryEnergySource === "Öl" || primaryEnergySource?.includes("Öl") || /Ölheizung/i.test(bodyText)) {
+        heatingType = "Zentralheizung";
+      }
+    }
   }
 
   // 9. EnEV/GEG Standard Mapping: Infer energy class from kWh if missing

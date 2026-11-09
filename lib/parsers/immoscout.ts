@@ -40,6 +40,8 @@ export function parseImmoScout(): ExtractedDealPayload | null {
   let purchasePriceEur: number | undefined;
   let livingAreaSqm: number | undefined;
   let rooms: number | undefined;
+  let bedrooms: number | undefined;
+  let bathrooms: number | undefined;
   let constructionYear: number | undefined;
   let energyClass: string | undefined;
   let energyValKwh: number | undefined;
@@ -73,6 +75,8 @@ export function parseImmoScout(): ExtractedDealPayload | null {
         if (re.price?.value) purchasePriceEur = re.price.value;
         if (re.livingSpace) livingAreaSqm = re.livingSpace;
         if (re.numberOfRooms) rooms = re.numberOfRooms;
+        if (re.numberOfBedrooms) bedrooms = re.numberOfBedrooms;
+        if (re.numberOfBathRooms) bathrooms = re.numberOfBathRooms;
         if (re.constructionYear) constructionYear = re.constructionYear;
 
         // Address
@@ -141,8 +145,17 @@ export function parseImmoScout(): ExtractedDealPayload | null {
           brokerName = [contact.salutation, contact.firstname, contact.lastname].filter(Boolean).join(" ");
         }
 
-        // Description
-        description = re.descriptionNote || re.furnishingNote || re.locationNote;
+        // Comprehensive description aggregation
+        const notes = [
+          re.title,
+          re.descriptionNote,
+          re.furnishingNote,
+          re.locationNote,
+          re.otherNote
+        ].filter(Boolean);
+        if (notes.length > 0) {
+          description = notes.join("\n\n");
+        }
 
         // High-Res Images from Attachments
         const attachments = re.attachments || re.galleryAttachments || [];
@@ -229,6 +242,20 @@ export function parseImmoScout(): ExtractedDealPayload | null {
     rooms = parseNum(roomsEl?.textContent);
   }
 
+  if (!bedrooms) {
+    const bedEl =
+      document.querySelector(".is24qa-schlafzimmer") ||
+      document.querySelector("[data-qa='schlafzimmer']");
+    bedrooms = parseNum(bedEl?.textContent);
+  }
+
+  if (!bathrooms) {
+    const bathEl =
+      document.querySelector(".is24qa-badezimmer") ||
+      document.querySelector("[data-qa='badezimmer']");
+    bathrooms = parseNum(bathEl?.textContent);
+  }
+
   if (!fullAddress) {
     const addrEl =
       document.querySelector("[data-qa='is24-expose-address']") ||
@@ -308,6 +335,12 @@ export function parseImmoScout(): ExtractedDealPayload | null {
         const y = parseNum(value);
         if (y && y >= 1700 && y <= 2035) constructionYear = Math.round(y);
       }
+      if (!bedrooms && (label.includes("schlafzimmer") || label.includes("schlafzi"))) {
+        bedrooms = parseNum(value);
+      }
+      if (!bathrooms && (label.includes("badezimmer") || label.includes("badezi") || label === "bad")) {
+        bathrooms = parseNum(value);
+      }
       if (!monthlyHausgeld && (label.includes("hausgeld") || label.includes("wohngeld"))) {
         monthlyHausgeld = parseNum(value);
       }
@@ -371,6 +404,16 @@ export function parseImmoScout(): ExtractedDealPayload | null {
   if (!rooms) {
     const roomsMatch = bodyText.match(/(?:Zimmer|Zi\.)[:\s]+([0-9\.\,]+)/i);
     if (roomsMatch) rooms = parseNum(roomsMatch[1]);
+  }
+
+  // 3b. Fallback for Bedrooms & Bathrooms from body
+  if (!bedrooms) {
+    const bedMatch = bodyText.match(/(?:Schlafzimmer|Schlafzi\.)[:\s]+([0-9]+)/i);
+    if (bedMatch) bedrooms = parseNum(bedMatch[1]);
+  }
+  if (!bathrooms) {
+    const bathMatch = bodyText.match(/(?:Badezimmer|Bäder|Bad)[:\s]+([0-9]+)/i);
+    if (bathMatch) bathrooms = parseNum(bathMatch[1]);
   }
 
   // 4. Check for Denkmalschutz exemption if no certificate found
@@ -515,6 +558,8 @@ export function parseImmoScout(): ExtractedDealPayload | null {
     specs: {
       living_area_sqm: livingAreaSqm,
       rooms,
+      bedrooms,
+      bathrooms,
       construction_year: constructionYear,
       energy_class: energyClass,
       energy_val_kwh: energyValKwh,

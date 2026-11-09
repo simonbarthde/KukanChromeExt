@@ -184,6 +184,29 @@ export function parseImmoScout(): ExtractedDealPayload | null {
   // TIER 2: Deep DOM Key-Value Scanner
   // ===========================================================================
   const scanDomKeyValuePairs = () => {
+    // 0. Direct data-qa & is24qa class selectors
+    if (!energyClass) {
+      const el = document.querySelector(".is24qa-energieeffizienzklasse, [data-qa='energieeffizienzklasse'], [data-qa='energy-efficiency-class']");
+      const m = el?.textContent?.match(/[A-H]\+?/i);
+      if (m) energyClass = m[0].toUpperCase();
+    }
+    if (!energyValKwh) {
+      const el = document.querySelector(".is24qa-endenergiebedarf, .is24qa-endenergieverbrauch, .is24qa-energieverbrauchskennwert, [data-qa='energy-consumption-value'], [data-qa='endenergiebedarf'], [data-qa='endenergieverbrauch']");
+      if (el?.textContent) energyValKwh = parseNum(el.textContent);
+    }
+    if (!energyCertificateType) {
+      const el = document.querySelector(".is24qa-energieausweistyp, .is24qa-art-des-energieausweises, [data-qa='energy-certificate-type'], [data-qa='energieausweis']");
+      if (el?.textContent?.trim()) energyCertificateType = el.textContent.trim();
+    }
+    if (!primaryEnergySource) {
+      const el = document.querySelector(".is24qa-wesentliche-energietraeger, .is24qa-befeuerung, [data-qa='firing-type'], [data-qa='energietraeger']");
+      if (el?.textContent?.trim()) primaryEnergySource = el.textContent.trim();
+    }
+    if (!heatingType) {
+      const el = document.querySelector(".is24qa-heizungsart, [data-qa='heating-type']");
+      if (el?.textContent?.trim()) heatingType = el.textContent.trim();
+    }
+
     // Scan dt / dd pairs
     document.querySelectorAll("dt").forEach((dt) => {
       const label = dt.textContent?.trim().toLowerCase() || "";

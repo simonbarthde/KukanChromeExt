@@ -82,10 +82,32 @@ const RadarOverlay: React.FC = () => {
   const handleImport = async () => {
     setStatus("pushing");
     setErrorMessage(null);
-    // Re-extract fresh from current DOM state in case of lazy-loaded sections
-    const freshDeal = extractDealFromCurrentPage() || deal;
-    setDeal(freshDeal);
-    const result = await pushDealToStaging(freshDeal);
+    const fresh = extractDealFromCurrentPage();
+    // Smart merge: keep any non-empty fields from previously extracted deal
+    const mergedDeal: ExtractedDealPayload = {
+      ...deal,
+      ...(fresh || {}),
+      address: {
+        ...(deal?.address || {}),
+        ...(fresh?.address || {}),
+      },
+      financials: {
+        ...(deal?.financials || {}),
+        ...(fresh?.financials || {}),
+      },
+      specs: {
+        ...(deal?.specs || {}),
+        ...(fresh?.specs || {}),
+      },
+      media: {
+        cover_image_url: fresh?.media?.cover_image_url || deal?.media?.cover_image_url,
+        image_urls: (fresh?.media?.image_urls && fresh.media.image_urls.length > 0)
+          ? fresh.media.image_urls
+          : deal?.media?.image_urls || [],
+      },
+    };
+    setDeal(mergedDeal);
+    const result = await pushDealToStaging(mergedDeal);
 
     if (result.success) {
       setStatus("success");

@@ -17,6 +17,21 @@ export function parseImmoScout(): ExtractedDealPayload | null {
     return isNaN(val) ? undefined : val;
   };
 
+  // Helper: deep object search in JSON trees
+  const findDeep = (obj: any, key: string, maxDepth = 6): any => {
+    if (!obj || typeof obj !== "object" || maxDepth <= 0) return undefined;
+    if (key in obj && obj[key] != null) return obj[key];
+    for (const k of Object.keys(obj)) {
+      try {
+        const res = findDeep(obj[k], key, maxDepth - 1);
+        if (res != null) return res;
+      } catch {
+        // ignore
+      }
+    }
+    return undefined;
+  };
+
   let title =
     document.querySelector("#expose-title")?.textContent?.trim() ||
     document.querySelector("h1")?.textContent?.trim() ||
@@ -44,14 +59,14 @@ export function parseImmoScout(): ExtractedDealPayload | null {
   const imageUrls: string[] = [];
 
   // ===========================================================================
-  // TIER 1: Next.js __NEXT_DATA__
+  // TIER 1: Next.js __NEXT_DATA__ (Direct JSON from Next.js)
   // ===========================================================================
   try {
     const nextDataEl = document.getElementById("__NEXT_DATA__");
     if (nextDataEl?.textContent) {
       const data = JSON.parse(nextDataEl.textContent);
       const expose = data?.props?.pageProps?.expose || data?.props?.pageProps?.initialState?.expose;
-      const re = expose?.realEstate;
+      const re = expose?.realEstate || findDeep(data, "realEstate");
 
       if (re) {
         if (re.title) title = re.title;
@@ -70,7 +85,7 @@ export function parseImmoScout(): ExtractedDealPayload | null {
         }
 
         // Energy Certificate from realEstate fields
-        const ec = re.energyCertificate || expose.energyCertificate;
+        const ec = re.energyCertificate || expose?.energyCertificate || findDeep(data, "energyCertificate");
         if (ec) {
           if (ec.energyEfficiencyClass) energyClass = ec.energyEfficiencyClass;
           if (ec.thermalCharacteristic) energyValKwh = parseNum(String(ec.thermalCharacteristic));
@@ -120,7 +135,7 @@ export function parseImmoScout(): ExtractedDealPayload | null {
         if (re.courtage?.courtage) brokerCommission = parseNum(re.courtage.courtage);
 
         // Broker Contact
-        const contact = expose.contactDetails || re.contactDetails;
+        const contact = expose?.contactDetails || re.contactDetails;
         if (contact) {
           brokerCompany = contact.companyName;
           brokerName = [contact.salutation, contact.firstname, contact.lastname].filter(Boolean).join(" ");
@@ -146,34 +161,6 @@ export function parseImmoScout(): ExtractedDealPayload | null {
             }
           });
         }
-
-        // Check attributes/sections arrays in expose
-        const sections = expose.sections || expose.criteria || [];
-        if (Array.isArray(sections)) {
-          sections.forEach((sec: any) => {
-            const items = sec.attributes || sec.items || (sec.label && sec.value ? [sec] : []);
-            if (Array.isArray(items)) {
-              items.forEach((item: any) => {
-                const l = String(item.label || item.key || "").toLowerCase();
-                const v = String(item.value || "");
-                if (!energyCertificateType && l.includes("energieausweis")) energyCertificateType = v;
-                if (!energyClass && l.includes("energieeffizienz")) {
-                  const m = v.match(/[A-H]\+?/i);
-                  if (m) energyClass = m[0].toUpperCase();
-                }
-                if (!energyValKwh && (l.includes("endenergie") || l.includes("energiebedarf") || l.includes("energieverbrauch"))) {
-                  energyValKwh = parseNum(v);
-                }
-                if (!primaryEnergySource && (l.includes("energieträger") || l.includes("befeuerung"))) {
-                  primaryEnergySource = v;
-                }
-                if (!heatingType && l.includes("heizung")) {
-                  heatingType = v;
-                }
-              });
-            }
-          });
-        }
       }
     }
   } catch (err) {
@@ -181,10 +168,98 @@ export function parseImmoScout(): ExtractedDealPayload | null {
   }
 
   // ===========================================================================
-  // TIER 2: Deep DOM Key-Value Scanner
+  // TIER 2: JSON-LD Schema Fallback
+  // ===========================================================================
+  if (imageUrls.length === 0 || !fullAddress || !purchasePriceEur) {
+    try {
+      const jsonLdEls = document.querySelectorAll('script[type="application/ld+json"]');
+      jsonLdEls.forEach((el) => {
+        const text = el.textContent;
+        if (!text) return;
+        const parsed = JSON.parse(text);
+        const obj = Array.isArray(parsed) ? parsed[0] : parsed;
+        if (obj) {
+          if (!purchasePriceEur && obj.offers?.price) purchasePriceEur = parseNum(String(obj.offers.price));
+          if (!fullAddress && obj.address) {
+            street = obj.address.streetAddress;
+            zip = obj.address.postalCode;
+            city = obj.address.addressLocality;
+            fullAddress = [street, zip, city].filter(Boolean).join(" ");
+          }
+          if (Array.isArray(obj.image)) {
+            obj.image.forEach((img: any) => {
+              const u = typeof img === "string" ? img : img?.contentUrl || img?.url;
+              if (u && !imageUrls.includes(u)) imageUrls.push(u);
+            });
+          }
+        }
+      });
+    } catch {
+      // ignore JSON-LD errors
+    }
+  }
+
+  // ===========================================================================
+  // TIER 3: DOM Selectors for Core Metrics (Price, Area, Rooms, Address)
+  // ===========================================================================
+  if (!purchasePriceEur) {
+    const priceEl =
+      document.querySelector(".is24qa-kaufpreis-main") ||
+      document.querySelector("[data-qa='kaufpreis']") ||
+      document.querySelector(".is24qa-kaufpreis") ||
+      document.querySelector(".hardfacts__cell--price");
+    purchasePriceEur = parseNum(priceEl?.textContent);
+  }
+
+  if (!livingAreaSqm) {
+    const areaEl =
+      document.querySelector(".is24qa-wohnflaeche-ca") ||
+      document.querySelector("[data-qa='wohnflaeche']") ||
+      document.querySelector(".is24qa-flaeche") ||
+      document.querySelector(".hardfacts__cell--area");
+    livingAreaSqm = parseNum(areaEl?.textContent);
+  }
+
+  if (!rooms) {
+    const roomsEl =
+      document.querySelector(".is24qa-zi") ||
+      document.querySelector("[data-qa='zimmer']") ||
+      document.querySelector(".is24qa-zimmer") ||
+      document.querySelector(".hardfacts__cell--rooms");
+    rooms = parseNum(roomsEl?.textContent);
+  }
+
+  if (!fullAddress) {
+    const addrEl =
+      document.querySelector("[data-qa='is24-expose-address']") ||
+      document.querySelector("[data-qa='address']") ||
+      document.querySelector(".address-block") ||
+      document.querySelector(".zip-region-and-country");
+
+    const rawAddr = addrEl?.textContent?.replace(/\s+/g, " ")?.trim();
+    if (rawAddr) {
+      fullAddress = rawAddr;
+      const m = rawAddr.match(/\b(\d{5})\s+([^,]+)/);
+      if (m) {
+        zip = m[1];
+        city = m[2]?.trim();
+      }
+    } else {
+      const bodyTop = document.body.innerText.slice(0, 3000);
+      const m = bodyTop.match(/\b(\d{5})\s+([A-ZÄÖÜ][a-zäöüß\s\-]+)/);
+      if (m) {
+        zip = m[1];
+        city = m[2]?.trim();
+        fullAddress = `${zip} ${city}`;
+      }
+    }
+  }
+
+  // ===========================================================================
+  // TIER 4: DOM Key-Value Scanner (Energy, Year, Hausgeld, Courtage)
   // ===========================================================================
   const scanDomKeyValuePairs = () => {
-    // 0. Direct data-qa & is24qa class selectors
+    // 0. Direct data-qa & is24qa selectors for energy
     if (!energyClass) {
       const el = document.querySelector(".is24qa-energieeffizienzklasse, [data-qa='energieeffizienzklasse'], [data-qa='energy-efficiency-class']");
       const m = el?.textContent?.match(/[A-H]\+?/i);
@@ -241,32 +316,27 @@ export function parseImmoScout(): ExtractedDealPayload | null {
       }
     });
 
-    // Scan custom grid items (e.g. .criteria-item, .grid-item, div with label and value children)
+    // Scan custom grid items
     document.querySelectorAll("div, li").forEach((container) => {
       const text = container.textContent || "";
-      if (text.length > 300) return; // Skip large wrappers
+      if (text.length > 300) return;
 
-      // Look for energy class
       if (!energyClass && text.includes("Energieeffizienzklasse")) {
         const m = text.match(/Energieeffizienzklasse[:\s]+([A-H]\+?)/i);
         if (m) energyClass = m[1].toUpperCase();
       }
-      // Look for kWh
       if (!energyValKwh && (text.includes("Endenergie") || text.includes("Energiebedarf") || text.includes("Energieverbrauch"))) {
         const m = text.match(/([0-9,\.]+)\s*kWh/i);
         if (m) energyValKwh = parseNum(m[1]);
       }
-      // Look for Energieträger
       if (!primaryEnergySource && (text.includes("Energieträger") || text.includes("Befeuerung"))) {
         const m = text.match(/(?:Energieträger|Befeuerung)[:\s]+([A-Za-zäöüÄÖÜ\s,]+?)(?:\n|\r|\t|Heizung|Endenergie|Baujahr|$)/);
         if (m && m[1].trim().length > 1) primaryEnergySource = m[1].trim();
       }
-      // Look for Heizungsart
       if (!heatingType && (text.includes("Heizungsart") || text.includes("Heizung:"))) {
         const m = text.match(/(?:Heizungsart|Heizung)[:\s]+([A-Za-zäöüÄÖÜ\s,]+?)(?:\n|\r|\t|Energieträger|Endenergie|$)/);
         if (m && m[1].trim().length > 1) heatingType = m[1].trim();
       }
-      // Look for Energieausweistyp
       if (!energyCertificateType && text.includes("Energieausweis")) {
         if (text.includes("Bedarfsausweis")) energyCertificateType = "Bedarfsausweis";
         else if (text.includes("Verbrauchsausweis")) energyCertificateType = "Verbrauchsausweis";
@@ -281,11 +351,29 @@ export function parseImmoScout(): ExtractedDealPayload | null {
   scanDomKeyValuePairs();
 
   // ===========================================================================
-  // TIER 3: Full Page Body Regex Scanner (Safety Net)
+  // TIER 5: Full Page Body Scanner (Safety Net)
   // ===========================================================================
   const bodyText = document.body.innerText || "";
 
-  // 1. Check for Denkmalschutz exemption if no certificate found
+  // 1. Fallback for Price from body
+  if (!purchasePriceEur) {
+    const priceMatch = bodyText.match(/(?:Kaufpreis|Preis)[:\s]+([0-9\.\,]+)\s*€/i);
+    if (priceMatch) purchasePriceEur = parseNum(priceMatch[1]);
+  }
+
+  // 2. Fallback for Living Area from body
+  if (!livingAreaSqm) {
+    const areaMatch = bodyText.match(/(?:Wohnfläche|Wohnfl\.)[:\s]+([0-9\.\,]+)\s*m²/i);
+    if (areaMatch) livingAreaSqm = parseNum(areaMatch[1]);
+  }
+
+  // 3. Fallback for Rooms from body
+  if (!rooms) {
+    const roomsMatch = bodyText.match(/(?:Zimmer|Zi\.)[:\s]+([0-9\.\,]+)/i);
+    if (roomsMatch) rooms = parseNum(roomsMatch[1]);
+  }
+
+  // 4. Check for Denkmalschutz exemption if no certificate found
   if (!energyCertificateType) {
     if (bodyText.includes("Denkmalschutz") || bodyText.includes("Baudenkmal") || bodyText.includes("Ensembleschutz")) {
       energyCertificateType = "nicht erforderlich (Denkmalschutz)";
@@ -293,24 +381,23 @@ export function parseImmoScout(): ExtractedDealPayload | null {
     }
   }
 
-  // 2. Full text regex for energy class
+  // 5. Full text regex for energy class
   if (!energyClass) {
     const classMatch = bodyText.match(/Energieeffizienzklasse[:\s]+([A-H]\+?)\b/i);
     if (classMatch) energyClass = classMatch[1].toUpperCase();
   }
 
-  // 3. Full text regex for kWh value
+  // 6. Full text regex for kWh value
   if (!energyValKwh) {
     const kwhMatch = bodyText.match(/(?:Endenergiebedarf|Endenergieverbrauch|Energiebedarf|Energieverbrauch)[:\s]+([0-9,\.]+)\s*kWh/i);
     if (kwhMatch) energyValKwh = parseNum(kwhMatch[1]);
   }
 
-  // 4. Full text regex for Energieträger
+  // 7. Full text regex for Energieträger
   if (!primaryEnergySource) {
     const energyKeywords = ["Gas", "Erdgas", "Öl", "Heizöl", "Fernwärme", "Pellets", "Holzpellets", "Wärmepumpe", "Luft-Wasser-Wärmepumpe", "Solar", "Strom"];
     const foundSources: string[] = [];
     energyKeywords.forEach((kw) => {
-      // Look for "Wesentliche Energieträger: Gas" or similar
       const re = new RegExp(`(?:Wesentliche[r]?\\s+Energieträger|Befeuerung)[^\\n]{0,50}\\b${kw}\\b`, "i");
       if (re.test(bodyText) && !foundSources.includes(kw)) {
         foundSources.push(kw);
@@ -321,7 +408,7 @@ export function parseImmoScout(): ExtractedDealPayload | null {
     }
   }
 
-  // 5. Full text regex for Heizungsart
+  // 8. Full text regex for Heizungsart
   if (!heatingType) {
     const heatingKeywords = ["Zentralheizung", "Etagenheizung", "Fußbodenheizung", "Fernwärme", "Wärmepumpe", "Ofenheizung", "Gasetagenheizung"];
     for (const hk of heatingKeywords) {
@@ -331,6 +418,61 @@ export function parseImmoScout(): ExtractedDealPayload | null {
         break;
       }
     }
+  }
+
+  // 9. EnEV/GEG Standard Mapping: Infer energy class from kWh if missing
+  if (!energyClass && energyValKwh && energyValKwh > 0) {
+    if (energyValKwh <= 30) energyClass = "A+";
+    else if (energyValKwh <= 50) energyClass = "A";
+    else if (energyValKwh <= 75) energyClass = "B";
+    else if (energyValKwh <= 100) energyClass = "C";
+    else if (energyValKwh <= 130) energyClass = "D";
+    else if (energyValKwh <= 160) energyClass = "E";
+    else if (energyValKwh <= 200) energyClass = "F";
+    else if (energyValKwh <= 250) energyClass = "G";
+    else energyClass = "H";
+  }
+
+  // ===========================================================================
+  // TIER 6: Comprehensive Image Crawler (OpenGraph + All ImmoScout CDN Photos)
+  // ===========================================================================
+  // 1. OpenGraph Cover Image
+  const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute("content");
+  if (ogImage && !imageUrls.includes(ogImage)) {
+    imageUrls.unshift(ogImage);
+  }
+
+  // 2. Scan all img elements across the page for pictures.immobilienscout24.de
+  if (imageUrls.length < 5) {
+    document.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
+      const src = img.src || img.getAttribute("data-src") || img.getAttribute("srcset");
+      if (src && (src.includes("pictures.immobilienscout24.de") || src.includes("is24"))) {
+        let best = src;
+        if (src.includes(",")) {
+          const parts = src.split(",");
+          best = parts[parts.length - 1].trim().split(" ")[0];
+        }
+        if (
+          best.startsWith("http") &&
+          !imageUrls.includes(best) &&
+          !best.includes("icon") &&
+          !best.includes("logo") &&
+          !best.includes("badge")
+        ) {
+          // Normalize to high-res if downscaled thumbnail
+          const highRes = best.replace(/\/resize\/[0-9]+x[0-9]+%3E\//, "/resize/1106x830%3E/");
+          imageUrls.push(highRes);
+        }
+      }
+    });
+  }
+
+  // 3. Broker Company fallback
+  if (!brokerCompany) {
+    brokerCompany =
+      document.querySelector(".offerer-name")?.textContent?.trim() ||
+      document.querySelector("[data-qa='company-name']")?.textContent?.trim() ||
+      document.querySelector("[data-qa='contact-name']")?.textContent?.trim();
   }
 
   // Clean numericals
@@ -374,7 +516,7 @@ export function parseImmoScout(): ExtractedDealPayload | null {
     },
     media: {
       cover_image_url: imageUrls[0],
-      image_urls: imageUrls.slice(0, 20)
+      image_urls: imageUrls.slice(0, 25)
     },
     description: description || document.querySelector(".is24qa-objektbeschreibung")?.textContent?.trim(),
     extracted_at: new Date().toISOString()

@@ -82,7 +82,10 @@ const RadarOverlay: React.FC = () => {
   const handleImport = async () => {
     setStatus("pushing");
     setErrorMessage(null);
-    const result = await pushDealToStaging(deal);
+    // Re-extract fresh from current DOM state in case of lazy-loaded sections
+    const freshDeal = extractDealFromCurrentPage() || deal;
+    setDeal(freshDeal);
+    const result = await pushDealToStaging(freshDeal);
 
     if (result.success) {
       setStatus("success");

@@ -1,0 +1,17 @@
+# Build and Cache
+build/
+.plasmo/
+dist/
+*.zip
+
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# System
+.DS_Store
+Thumbs.db

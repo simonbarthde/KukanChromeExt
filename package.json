@@ -1,0 +1,54 @@
+{
+  "name": "flipos-chrome-extension",
+  "displayName": "FlipOS – Deal Sourcing Radar",
+  "version": "0.1.0",
+  "description": "1-Klick Deal-Clipper und Portal-Radar (ImmoScout24, Immowelt, Kleinanzeigen) für FlipOS",
+  "author": "FlipOS",
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "dev": "plasmo dev",
+    "build": "plasmo build",
+    "package": "plasmo package"
+  },
+  "dependencies": {
+    "@plasmohq/storage": "^1.15.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "lucide-react": "^1.16.0",
+    "plasmo": "0.90.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.308",
+    "@types/node": "22.13.9",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@swc/core",
+      "esbuild",
+      "lmdb",
+      "msgpackr-extract",
+      "sharp"
+    ]
+  },
+  "manifest": {
+    "host_permissions": [
+      "https://*.immobilienscout24.de/*",
+      "https://*.immowelt.de/*",
+      "https://*.kleinanzeigen.de/*",
+      "https://*.supabase.co/*"
+    ],
+    "permissions": [
+      "storage",
+      "tabs",
+      "activeTab"
+    ]
+  }
+}

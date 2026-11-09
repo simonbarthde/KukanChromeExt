@@ -300,14 +300,20 @@ const RadarOverlay: React.FC = () => {
           {/* 3. FlipOS 1-Klick Import Action Button */}
           <div className="pr-1">
             {status === "imported" || status === "success" ? (
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-950/80 border border-emerald-600/80 rounded-xl text-emerald-300 text-xs font-semibold shadow-inner">
-                <span className="text-sm">✓</span>
-                <span>In Staging Inbox</span>
-                {stagingId && (
-                  <span className="text-[10px] font-mono text-emerald-400/80 pl-1 border-l border-emerald-800">
-                    {stagingId.slice(0, 8)}
-                  </span>
-                )}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-emerald-950/80 border border-emerald-600/80 rounded-xl text-emerald-300 text-xs font-semibold shadow-inner">
+                  <span className="text-sm">✓</span>
+                  <span>In Inbox</span>
+                </div>
+                <a
+                  href="https://kukan.vercel.app/inbox"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-colors"
+                >
+                  <span>In FlipOS öffnen</span>
+                  <span>↗</span>
+                </a>
               </div>
             ) : (
               <button

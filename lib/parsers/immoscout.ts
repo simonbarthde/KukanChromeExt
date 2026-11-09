@@ -145,13 +145,18 @@ export function parseImmoScout(): ExtractedDealPayload | null {
           brokerName = [contact.salutation, contact.firstname, contact.lastname].filter(Boolean).join(" ");
         }
 
-        // Comprehensive description aggregation
+        // Comprehensive description aggregation from JSON
+        const descNote = re.descriptionNote || re.freeTexts?.descriptionNote || findDeep(data, "descriptionNote") || findDeep(data, "description");
+        const furnNote = re.furnishingNote || re.freeTexts?.furnishingNote || findDeep(data, "furnishingNote");
+        const locNote = re.locationNote || re.freeTexts?.locationNote || findDeep(data, "locationNote");
+        const othNote = re.otherNote || re.freeTexts?.otherNote || findDeep(data, "otherNote");
+
         const notes = [
-          re.title,
-          re.descriptionNote,
-          re.furnishingNote,
-          re.locationNote,
-          re.otherNote
+          re.title || title,
+          descNote,
+          furnNote,
+          locNote,
+          othNote
         ].filter(Boolean);
         if (notes.length > 0) {
           description = notes.join("\n\n");
@@ -575,7 +580,16 @@ export function parseImmoScout(): ExtractedDealPayload | null {
       cover_image_url: imageUrls[0],
       image_urls: imageUrls.slice(0, 25)
     },
-    description: description || document.querySelector(".is24qa-objektbeschreibung")?.textContent?.trim(),
+    description: (() => {
+      if (description && description.trim().length > 50) return description;
+      const domTexts = [
+        document.querySelector(".is24qa-objektbeschreibung, [data-qa='descriptionNote'], [data-qa='objektbeschreibung']")?.textContent?.trim(),
+        document.querySelector(".is24qa-ausstattung, [data-qa='furnishingNote'], [data-qa='ausstattung']")?.textContent?.trim(),
+        document.querySelector(".is24qa-lage, [data-qa='locationNote'], [data-qa='lage']")?.textContent?.trim(),
+        document.querySelector(".is24qa-sonstiges, [data-qa='otherNote'], [data-qa='sonstiges']")?.textContent?.trim(),
+      ].filter(Boolean);
+      return domTexts.length > 0 ? domTexts.join("\n\n") : description;
+    })(),
     extracted_at: new Date().toISOString()
   };
 }
